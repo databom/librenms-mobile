@@ -1,0 +1,242 @@
+// MainActivity.java
+package com.example.librenmsmonitor;
+
+import android.os.Bundle;
+import android.util.Log;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.lifecycle.ViewModelProvider;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.example.librenmsmonitor.api.LibreNmsApi;
+import com.example.librenmsmonitor.model.Device;
+import com.example.librenmsmonitor.viewmodel.DeviceViewModel;
+import com.example.librenmsmonitor.adapter.DeviceAdapter;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity {
+    private DeviceViewModel deviceViewModel;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        RecyclerView recyclerView = findViewById(R.id.recyclerView);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+
+        DeviceAdapter adapter = new DeviceAdapter();
+        recyclerView.setAdapter(adapter);
+
+        deviceViewModel = new ViewModelProvider(this).get(DeviceViewModel.class);
+        deviceViewModel.getDevices().observe(this, devices -> {
+            if (devices != null) {
+                adapter.setDevices(devices);
+            }
+        });
+
+        // Fetch data
+        deviceViewModel.fetchDevices("YOUR_API_TOKEN", "https://your-librenms-url/");
+    }
+}
+
+// LibreNmsApi.java
+package com.example.librenmsmonitor.api;
+
+import com.example.librenmsmonitor.model.DeviceResponse;
+
+import retrofit2.Call;
+import retrofit2.http.GET;
+import retrofit2.http.Header;
+import retrofit2.http.Url;
+
+public interface LibreNmsApi {
+    @GET
+    Call<DeviceResponse> getDevices(
+            @Header("X-Auth-Token") String token,
+            @Url String url
+    );
+}
+
+// DeviceResponse.java
+package com.example.librenmsmonitor.model;
+
+import java.util.List;
+
+public class DeviceResponse {
+    private List<Device> devices;
+
+    public List<Device> getDevices() {
+        return devices;
+    }
+
+    public void setDevices(List<Device> devices) {
+        this.devices = devices;
+    }
+}
+
+// Device.java
+package com.example.librenmsmonitor.model;
+
+public class Device {
+    private String hostname;
+    private String status;
+
+    public String getHostname() {
+        return hostname;
+    }
+
+    public void setHostname(String hostname) {
+        this.hostname = hostname;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+}
+
+// DeviceAdapter.java
+package com.example.librenmsmonitor.adapter;
+
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.RecyclerView;
+import com.example.librenmsmonitor.R;
+import com.example.librenmsmonitor.model.Device;
+import java.util.ArrayList;
+import java.util.List;
+
+public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceViewHolder> {
+    private List<Device> devices = new ArrayList<>();
+
+    @NonNull
+    @Override
+    public DeviceViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.device_item, parent, false);
+        return new DeviceViewHolder(view);
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull DeviceViewHolder holder, int position) {
+        Device device = devices.get(position);
+        holder.hostname.setText(device.getHostname());
+        holder.status.setText(device.getStatus());
+    }
+
+    @Override
+    public int getItemCount() {
+        return devices.size();
+    }
+
+    public void setDevices(List<Device> devices) {
+        this.devices = devices;
+        notifyDataSetChanged();
+    }
+
+    static class DeviceViewHolder extends RecyclerView.ViewHolder {
+        private final TextView hostname;
+        private final TextView status;
+
+        public DeviceViewHolder(@NonNull View itemView) {
+            super(itemView);
+            hostname = itemView.findViewById(R.id.device_hostname);
+            status = itemView.findViewById(R.id.device_status);
+        }
+    }
+}
+
+// DeviceViewModel.java
+package com.example.librenmsmonitor.viewmodel;
+
+import android.util.Log;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.ViewModel;
+
+import com.example.librenmsmonitor.api.LibreNmsApi;
+import com.example.librenmsmonitor.model.Device;
+import com.example.librenmsmonitor.model.DeviceResponse;
+
+import java.util.List;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+
+public class DeviceViewModel extends ViewModel {
+    private final MutableLiveData<List<Device>> devices = new MutableLiveData<>();
+
+    public LiveData<List<Device>> getDevices() {
+        return devices;
+    }
+
+    public void fetchDevices(String token, String baseUrl) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        LibreNmsApi api = retrofit.create(LibreNmsApi.class);
+
+        Call<DeviceResponse> call = api.getDevices(token, baseUrl + "api/v0/devices");
+        call.enqueue(new Callback<DeviceResponse>() {
+            @Override
+            public void onResponse(Call<DeviceResponse> call, Response<DeviceResponse> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    devices.setValue(response.body().getDevices());
+                } else {
+                    Log.e("DeviceViewModel", "Response failed: " + response.message());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<DeviceResponse> call, Throwable t) {
+                Log.e("DeviceViewModel", "API call failed: ", t);
+            }
+        });
+    }
+}
+
+// activity_main.xml
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</LinearLayout>
+
+// device_item.xml
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/device_hostname"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hostname"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/device_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status"
+        android:textSize="14sp"
+        android:paddingTop="4dp" />
+</LinearLayout>
